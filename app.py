@@ -263,7 +263,10 @@ def highlight_row(row):
     bg = color_map.get(row["Business Unit"], "#ffffff")  # 0 → blanco
     return [f"background-color: {bg}; color: black" for _ in row]
 
-styled = summary_df.style.apply(highlight_row, axis=1)
+#styled = summary_df.style.apply(highlight_row, axis=1)
+styled = summary_df.style.apply(highlight_row, axis=1).format({"Share %": "{:.1f}"})
+
+
 st.table(styled)
 
 st.caption(f"Total users in {selected_loc}: {total_users}")

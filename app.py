@@ -2,38 +2,114 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from pathlib import Path
+import unicodedata
+import re
 
 # ---------- Config ----------
 st.set_page_config(page_title="BU Breakdown per Site", layout="centered")
-
 TITLE = "BU Breakdown per Site"
-REQUIRED_COLS = ["Business Unit", "Location", "Real Estate ID"]
 
-# 👉👉 Cambia esta ruta por la tuya (usa r'...' o dobles barras \\ en Windows)
+# 👉 Ajusta estos 3 valores:
 DATA_PATH = Path(r"C:\Users\Miguel\OneDrive - MBD 2005 SL\Documentos\Javier Rua\clone github\BUpercentage\IFF Directory 2025-08-04 01_05 EDT.xlsx")
+SHEET_NAME = 0               # nombre de hoja o índice (ej. "Sheet1" o 0)
+HEADER_ROW = 0               # fila (0-index) donde están las cabeceras reales
 
-# ---------- Helpers ----------
+# Columnas requeridas lógicas (claves internas)
+REQUIRED_KEYS = ["business_unit", "location", "real_estate_id"]
+
+# Sinónimos aceptados para cada columna (formato flexible; se normaliza)
+SYNONYMS = {
+    "business_unit": [
+        "business unit", "bu", "b.u.", "unidad negocio", "unidad de negocio",
+        "division", "segment", "business_unit"
+    ],
+    "location": [
+        "location", "site", "city", "ciudad", "ubicacion", "ubicación", "localizacion", "localización"
+    ],
+    "real_estate_id": [
+        "real estate id", "realestateid", "real estate code", "realestate code",
+        "re id", "reid", "property id", "property code", "codigo inmueble", "código inmueble"
+    ]
+}
+
+def normalize(s: str) -> str:
+    """Minúsculas, sin tildes, sin espacios/guiones/puntuación."""
+    if s is None:
+        return ""
+    s = unicodedata.normalize("NFKD", str(s))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]", "", s)  # fuera espacios, _, -, ., etc.
+    return s
+
+def best_match(required_key: str, candidates: list[str]) -> str | None:
+    """
+    Devuelve el nombre ORIGINAL de la columna del Excel que mejor coincide
+    con el required_key usando sinónimos + normalización.
+    """
+    syns_norm = [normalize(x) for x in SYNONYMS.get(required_key, [])]
+    cand_norm = {col: normalize(col) for col in candidates}
+
+    # 1) Coincidencia exacta con algún sinónimo
+    for col, ncol in cand_norm.items():
+        if ncol in syns_norm:
+            return col
+
+    # 2) Contiene (para encabezados largos)
+    for col, ncol in cand_norm.items():
+        if any(sn in ncol for sn in syns_norm):
+            return col
+
+    # 3) Coincidencia por tokens clave (por ejemplo "real","estate","id")
+    tokens_map = {
+        "business_unit": ["business", "unit", "bu"],
+        "location": ["location", "site", "city"],
+        "real_estate_id": ["real", "estate", "id", "code", "property"]
+    }
+    tokens = [normalize(t) for t in tokens_map.get(required_key, [])]
+    for col, ncol in cand_norm.items():
+        if sum(t in ncol for t in tokens) >= 2:  # al menos 2 tokens presentes
+            return col
+
+    return None
+
 @st.cache_data
-def load_excel_from_path(path: Path):
+def load_excel_flexible(path: Path, sheet_name, header_row: int):
     if not path.exists():
         raise FileNotFoundError(f"No existe el archivo en: {path}")
-    # Abrimos en binario para evitar algunos locks raros
+
+    # Abrir en binario ayuda con locks de OneDrive/Excel
     with open(path, "rb") as fh:
-        df = pd.read_excel(fh, engine="openpyxl")
-    # Limpieza de nombres de columnas
-    df.columns = df.columns.str.strip()
-    colmap = {c.lower(): c for c in df.columns}
-    def find_col(name):
-        return colmap.get(name.lower(), name)
-    needed = [find_col(c) for c in REQUIRED_COLS if find_col(c) in df.columns]
-    if len(needed) < 3:
-        missing = set(REQUIRED_COLS) - set(needed)
-        raise ValueError(f"Faltan columnas requeridas en el Excel: {', '.join(missing)}")
-    out = df[needed].copy()
-    out.columns = REQUIRED_COLS
-    for c in REQUIRED_COLS:
+        df = pd.read_excel(fh, engine="openpyxl", sheet_name=sheet_name, header=header_row)
+
+    # Columnas disponibles
+    cols = [str(c) for c in df.columns]
+    mapping = {}
+    for key in REQUIRED_KEYS:
+        match = best_match(key, cols)
+        if match:
+            mapping[key] = match
+
+    # Si falta alguna, informar claramente
+    missing_keys = [k for k in REQUIRED_KEYS if k not in mapping]
+    if missing_keys:
+        detail = "\n".join([f"- {k}: {SYNONYMS[k]}" for k in missing_keys])
+        raise ValueError(
+            "No se localizaron algunas columnas requeridas.\n"
+            f"Hoja: {sheet_name} | Fila cabecera: {header_row}\n"
+            f"Columnas detectadas: {cols}\n\n"
+            f"Faltantes y sinónimos aceptados:\n{detail}"
+        )
+
+    # Subconjunto + renombrado a nombres estándar para el resto del código
+    out = df[[mapping["business_unit"], mapping["location"], mapping["real_estate_id"]]].copy()
+    out.columns = ["Business Unit", "Location", "Real Estate ID"]
+
+    # Limpieza básica
+    for c in out.columns:
         if out[c].dtype == object:
             out[c] = out[c].astype(str).str.strip()
+
     return out
 
 def categorize_bu(bu: str) -> str:
@@ -69,56 +145,11 @@ def plot_pie(counts: dict):
 
 # ---------- UI ----------
 st.markdown(f"## {TITLE}")
-st.caption(f"Reading from: `{DATA_PATH}`")
+st.caption(f"Reading from: `{DATA_PATH}` | sheet: `{SHEET_NAME}` | header row: {HEADER_ROW}")
 
-# Cargar datos desde la ruta fija
+# Cargar datos desde ruta fija con matching flexible
 try:
-    df = load_excel_from_path(DATA_PATH)
-except PermissionError as e:
-    st.error(f"No se pudo abrir el archivo (Permission denied). "
-             f"¿Está abierto en Excel/OneDrive? Ciérralo y actualiza. Ruta: {DATA_PATH}")
-    st.stop()
-except FileNotFoundError as e:
-    st.error(str(e))
-    st.stop()
-except Exception as e:
-    st.error(f"No se pudo cargar el Excel: {e}")
-    st.stop()
-
-# ----- Filtro Location -----
-locations = sorted(df["Location"].dropna().unique().tolist())
-selected_loc = st.selectbox("Location", options=locations, index=0 if locations else None)
-if selected_loc is None:
-    st.stop()
-
-df_loc = df[df["Location"] == selected_loc].copy()
-
-# ----- Real Estate ID -----
-unique_ids = sorted(df_loc["Real Estate ID"].dropna().astype(str).unique().tolist())
-reid_text = "—" if not unique_ids else (unique_ids[0] if len(unique_ids) == 1 else ", ".join(unique_ids))
-st.markdown(f"**Real Estate ID:** {reid_text}")
-
-# ----- Cómputo por BU -----
-df_loc["BU Category"] = df_loc["Business Unit"].apply(categorize_bu)
-order = ["Taste", "Scent", "Food Ingredients", "Health & Biosciences", "Corporate"]
-counts = {k: int((df_loc["BU Category"] == k).sum()) for k in order}
-
-total_users = sum(counts.values())
-if total_users == 0:
-    st.info("No hay usuarios en esta Location.")
-    st.stop()
-
-# ----- Pie chart -----
-st.divider()
-st.write("### Breakdown by Business Unit")
-fig = plot_pie(counts)
-st.pyplot(fig, clear_figure=True)
-
-# ----- Resumen tabla -----
-st.write("#### Resumen")
-summary_df = pd.DataFrame({"Business Unit": order, "Users": [counts[k] for k in order]})
-summary_df["Share %"] = (summary_df["Users"] / total_users * 100).round(1)
-st.dataframe(summary_df, use_container_width=True)
-st.caption(f"Total users in {selected_loc}: {total_users}")
-
-
+    df = load_excel_flexible(DATA_PATH, SHEET_NAME, HEADER_ROW)
+except PermissionError:
+    st.error(
+        "No se pudo abrir el archivo (Permission denied). ¿Está abierto en Excel/OneDrive? "

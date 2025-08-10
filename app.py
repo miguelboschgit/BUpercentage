@@ -152,16 +152,16 @@ def categorize_bu(bu: str) -> str:
         return "Food Ingredients"
     return "Corporate"
 
-# ========== PIE + COLOR MAP (AZULES) ==========
+# ========== PIE + COLOR MAP (AZULES CLAROS) ==========
 def plot_pie_and_colors_blue(counts: dict):
     """
-    Pie chart en escala 'Blues'.
+    Pie chart en escala 'Blues' clara.
     - Oculta categorías con 0 en el pie.
     - Devuelve (fig, color_map) donde 0 -> blanco en la tabla.
-    - Mayor 'Users' => azul más oscuro.
+    - Mayor 'Users' => azul más oscuro (pero no muy oscuro).
     """
     labels_all = list(counts.keys())
-    sizes_all = list(counts.values())
+    sizes_all  = list(counts.values())
     pairs = [(l, s) for l, s in zip(labels_all, sizes_all) if s > 0]
 
     fig, ax = plt.subplots()
@@ -173,38 +173,36 @@ def plot_pie_and_colors_blue(counts: dict):
     labels = [p[0] for p in pairs]
     sizes  = [p[1] for p in pairs]
 
-    vmin = min(sizes)
-    vmax = max(sizes)
+    vmin, vmax = min(sizes), max(sizes)
     if vmin == vmax:
-        norm = lambda v: 0.7
+        # todos iguales → tono medio-claro constante
+        def norm(_): return 0.5
     else:
         _norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-        norm = lambda v: _norm(v)
+        def norm(v): return _norm(v)
 
-    #cmap = cm.get_cmap("Blues")
-    #slice_colors = [mcolors.to_hex(cmap(norm(v))) for v in sizes]
-    # Usar Blues pero solo desde el 0.3 al 0.8 para evitar azules muy oscuros o blancos totales
+    # sub-rango claro de Blues para evitar tonos muy oscuros
     cmap_full = cm.get_cmap("Blues")
-    def cmap_light(v):
-    return cmap_full(0.3 + 0.5 * v)  # 0.3 = azul claro, 0.8 = azul medio
+    def cmap_light_unit(u: float):
+        # u en [0,1] → mapea a [0.25, 0.75] (claro → medio)
+        x = 0.25 + 0.50 * max(0.0, min(1.0, u))
+        return cmap_full(x)
 
-    slice_colors = [mcolors.to_hex(cmap_light(norm(v))) for v in sizes]
-
+    slice_colors = [mcolors.to_hex(cmap_light_unit(norm(v))) for v in sizes]
 
     ax.pie(
         sizes,
-        labels=labels,           # solo >0
+        labels=labels,             # solo >0
         colors=slice_colors,
         autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
         startangle=90
     )
     ax.axis("equal")
 
+    # mapa de colores para la tabla (0 → blanco)
     color_map = {}
     for k, v in counts.items():
-        #color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap(norm(v)))
-        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap_light(norm(v)))
-
+        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap_light_unit(norm(v)))
     return fig, color_map
 
 # ========== UI ==========
@@ -245,7 +243,7 @@ if total_users == 0:
     st.info("No hay usuarios en esta Location.")
     st.stop()
 
-# ----- Pie chart + colores (azules y sin categorías 0) -----
+# ----- Pie chart + colores (azules claros y sin categorías 0) -----
 st.divider()
 st.write("### Breakdown by Business Unit")
 fig, color_map = plot_pie_and_colors_blue(counts)

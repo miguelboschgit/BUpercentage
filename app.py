@@ -291,7 +291,7 @@ fig, color_map = plot_pie_fixed_blue(counts, order)
 st.pyplot(fig, clear_figure=True)
 
 # ----- Resumen (tabla con el mismo esquema de color) -----
-st.write("#### Resumen")
+st.write("#### Summary")
 summary_df = pd.DataFrame({"Business Unit": order, "Users": [counts[k] for k in order]})
 summary_df["Share %"] = (summary_df["Users"] / total_users * 100).round(1)
 

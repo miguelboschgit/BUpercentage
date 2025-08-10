@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib import colors as mcolors
+from matplotlib import cm
 from pathlib import Path
 import unicodedata
 import re
@@ -39,7 +40,6 @@ SYNONYMS = {
 
 # ========== NORMALIZACIÓN/MATCHING ==========
 def normalize(s: str) -> str:
-    """Minúsculas, sin tildes, y sin caracteres no alfanuméricos."""
     if s is None:
         return ""
     s = unicodedata.normalize("NFKD", str(s))
@@ -51,18 +51,12 @@ def normalize(s: str) -> str:
 def best_match(required_key: str, candidates: list[str]) -> str | None:
     syns_norm = [normalize(x) for x in SYNONYMS.get(required_key, [])]
     cand_norm = {col: normalize(col) for col in candidates}
-
-    # 1) Coincidencia exacta con algún sinónimo
     for col, ncol in cand_norm.items():
         if ncol in syns_norm:
             return col
-
-    # 2) Contiene (por si el encabezado es más largo)
     for col, ncol in cand_norm.items():
         if any(sn in ncol for sn in syns_norm):
             return col
-
-    # 3) Tokens clave
     tokens_map = {
         "business_unit": ["business", "unit", "bu", "segment", "division"],
         "location": ["location", "site", "city", "loc"],
@@ -72,40 +66,28 @@ def best_match(required_key: str, candidates: list[str]) -> str | None:
     for col, ncol in cand_norm.items():
         if sum(t in ncol for t in tokens) >= 2:
             return col
-
     return None
 
 # ========== DETECCIÓN DE CABECERAS ==========
 def try_build_df(raw_df: pd.DataFrame, header_row: int) -> pd.DataFrame | None:
-    """Usa header_row como fila de cabeceras y construye df con columnas requeridas."""
     if header_row >= len(raw_df):
         return None
-
-    # Tomamos la fila como cabecera
     cols = [str(c) for c in raw_df.iloc[header_row]]
     df = raw_df.iloc[header_row + 1:].copy()
     df.columns = cols
     df = df.reset_index(drop=True)
-
-    # Buscar mapeo para las 3 columnas
     mapping = {}
     for key in REQUIRED_KEYS:
         match = best_match(key, [str(c) for c in df.columns])
         if match:
             mapping[key] = match
-
     if len(mapping) < len(REQUIRED_KEYS):
         return None
-
     out = df[[mapping["business_unit"], mapping["location"], mapping["real_estate_id"]]].copy()
     out.columns = ["Business Unit", "Location", "Real Estate ID"]
-
-    # Limpieza básica
     for c in out.columns:
         if out[c].dtype == object:
             out[c] = out[c].astype(str).str.strip()
-
-    # Filtrar filas totalmente vacías en las requeridas
     out = out[(out["Business Unit"] != "") | (out["Location"] != "") | (out["Real Estate ID"] != "")]
     return out
 
@@ -124,12 +106,10 @@ def load_excel_auto(path: Path, sheet_name):
 
     def load_from_sheet(sh):
         with open(path, "rb") as fh:
-            # Leemos sin cabecera para poder escanear filas
             raw = pd.read_excel(fh, engine="openpyxl", sheet_name=sh, header=None)
         hr, df_ok = find_header_row(raw)
         return hr, df_ok, raw
 
-    # 1) Si se especifica hoja, probar solo esa
     if sheet_name is not None:
         hr, df_ok, raw = load_from_sheet(sheet_name)
         if df_ok is None:
@@ -142,7 +122,6 @@ def load_excel_auto(path: Path, sheet_name):
             )
         return sheet_name, hr, df_ok
 
-    # 2) Probar todas las hojas
     with open(path, "rb") as fh:
         xls = pd.ExcelFile(fh, engine="openpyxl")
     last_first_row = None
@@ -151,7 +130,6 @@ def load_excel_auto(path: Path, sheet_name):
         if df_ok is not None:
             return sh, hr, df_ok
         last_first_row = [str(c) for c in raw.iloc[0]] if len(raw) else []
-
     raise ValueError(
         "No se localizaron columnas requeridas en ninguna hoja.\n"
         f"Hojas probadas: {xls.sheet_names}\n"
@@ -174,29 +152,50 @@ def categorize_bu(bu: str) -> str:
         return "Food Ingredients"
     return "Corporate"
 
-# ========== PLOT (con colores para la tabla) ==========
-def plot_pie_and_colors(counts: dict):
-    labels = list(counts.keys())
-    sizes = list(counts.values())
+# ========== PIE + COLOR MAP (AZULES) ==========
+def plot_pie_and_colors_blue(counts: dict):
+    """
+    Pie chart en escala 'Blues'.
+    - Oculta categorías con 0 en el pie.
+    - Devuelve (fig, color_map) donde 0 -> blanco en la tabla.
+    - Mayor 'Users' => azul más oscuro.
+    """
+    labels_all = list(counts.keys())
+    sizes_all = list(counts.values())
+    pairs = [(l, s) for l, s in zip(labels_all, sizes_all) if s > 0]
+
     fig, ax = plt.subplots()
-    if sum(sizes) == 0:
+    if not pairs:
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
-        return fig, {}
+        return fig, {k: "#ffffff" for k in labels_all}
 
-    wedges, texts, autotexts = ax.pie(
+    labels = [p[0] for p in pairs]
+    sizes  = [p[1] for p in pairs]
+
+    vmin = min(sizes)
+    vmax = max(sizes)
+    if vmin == vmax:
+        norm = lambda v: 0.7
+    else:
+        _norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+        norm = lambda v: _norm(v)
+
+    cmap = cm.get_cmap("Blues")
+    slice_colors = [mcolors.to_hex(cmap(norm(v))) for v in sizes]
+
+    ax.pie(
         sizes,
-        labels=labels,
+        labels=labels,           # solo >0
+        colors=slice_colors,
         autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
         startangle=90
     )
-    ax.axis('equal')
+    ax.axis("equal")
 
-    # mapa {label: color_hex} según el color real de cada porción
     color_map = {}
-    for lab, w in zip(labels, wedges):
-        rgba = w.get_facecolor()
-        color_map[lab] = mcolors.to_hex(rgba, keep_alpha=False)
+    for k, v in counts.items():
+        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap(norm(v)))
     return fig, color_map
 
 # ========== UI ==========
@@ -237,26 +236,22 @@ if total_users == 0:
     st.info("No hay usuarios en esta Location.")
     st.stop()
 
-# ----- Pie chart + colores -----
+# ----- Pie chart + colores (azules y sin categorías 0) -----
 st.divider()
 st.write("### Breakdown by Business Unit")
-fig, color_map = plot_pie_and_colors(counts)
+fig, color_map = plot_pie_and_colors_blue(counts)
 st.pyplot(fig, clear_figure=True)
 
-# ----- Resumen tabla (colores iguales al pie) -----
+# ----- Resumen (tabla con el mismo esquema de color) -----
 st.write("#### Resumen")
 summary_df = pd.DataFrame({"Business Unit": order, "Users": [counts[k] for k in order]})
 summary_df["Share %"] = (summary_df["Users"] / total_users * 100).round(1)
 
 def highlight_row(row):
-    color = color_map.get(row["Business Unit"], "#ffffff")
-    # Texto en negro para legibilidad; si quisieras calcular contraste, lo añadimos luego
-    return [f"background-color: {color}; color: black" for _ in row]
+    bg = color_map.get(row["Business Unit"], "#ffffff")  # 0 → blanco
+    return [f"background-color: {bg}; color: black" for _ in row]
 
 styled = summary_df.style.apply(highlight_row, axis=1)
-
-# Usa st.table para respetar los estilos (st.dataframe a veces ignora Styler)
 st.table(styled)
 
 st.caption(f"Total users in {selected_loc}: {total_users}")
-

@@ -110,7 +110,7 @@ def load_excel_auto(path: Path, sheet_name):
         hr, df_ok = find_header_row(raw)
         return hr, df_ok, raw
 
-    if sheet_name is not None:
+    if sheet_name es not None:
         hr, df_ok, raw = load_from_sheet(sheet_name)
         if df_ok is None:
             first_row = [str(c) for c in raw.iloc[0]] if len(raw) else []
@@ -154,38 +154,29 @@ def categorize_bu(bu: str) -> str:
 
 # ====== PALETA FIJA DE AZULES (SUAVE) + PIE ======
 def fixed_blue_palette(order):
-    """
-    Devuelve un dict {BU: color_hex} con azules fijos y suaves.
-    Usamos un subrango del colormap 'Blues' para que todos los tonos sean claros/medios.
-    El primer BU de 'order' recibe el tono más intenso (pero suave).
-    """
     cmap = cm.get_cmap("Blues")
     n = len(order)
     if n <= 1:
-        levels = [0.60]  # azul medio-suave
+        levels = [0.60]
     else:
-        # rango suave: 0.40 (claro) → 0.68 (medio). Bien separados.
-        start, end = 0.40, 0.68
+        start, end = 0.40, 0.68  # rango claro→medio
         step = (end - start) / (n - 1)
-        # el primero de 'order' usa el más intenso dentro del rango (pero suave)
         levels = [end - i * step for i in range(n)]
     return {bu: mcolors.to_hex(cmap(lv)) for bu, lv in zip(order, levels)}
 
 def plot_pie_fixed_blue(counts: dict, order):
     """
-    Pie con azules fijos por BU (suaves) y SIN categorías con 0.
-    Devuelve (fig, color_map) para colorear la tabla.
+    Pie con azules fijos por BU y sin categorías con 0.
+    Coloca labels fuera y % dentro para evitar solapes; oculta porciones < 2%.
     """
     palette = fixed_blue_palette(order)
 
-    # Solo >0 para el pie
     pairs = [(bu, counts.get(bu, 0)) for bu in order if counts.get(bu, 0) > 0]
     fig, ax = plt.subplots()
 
     if not pairs:
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
-        # tabla: 0 → blanco
         table_colors = {bu: "#ffffff" if counts.get(bu, 0) == 0 else palette[bu] for bu in order}
         return fig, table_colors
 
@@ -193,31 +184,38 @@ def plot_pie_fixed_blue(counts: dict, order):
     sizes  = [v  for _,  v in pairs]
     colors = [palette[bu] for bu in labels]
 
+    def _autopct_factory(vals, cutoff=2.0):
+        total = sum(vals)
+        def _fmt(pct):
+            if pct < cutoff:
+                return ""
+            count = int(round(pct/100 * total))
+            return f"{pct:.0f}%\n({count})"
+        return _fmt
+
     ax.pie(
         sizes,
-       labels=labels,
+        labels=labels,                         # etiquetas fuera
         colors=colors,
-        autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
+        autopct=_autopct_factory(sizes, 2.0),  # %/conteo dentro; oculta < 2%
         startangle=90,
-        labeldistance=1.1,   # separa etiquetas del centro
-        pctdistance=0.75     # coloca los porcentajes un poco más hacia dentro
+        labeldistance=1.18,                    # aleja labels del centro
+        pctdistance=0.66,                      # acerca % al centro
+        textprops={"fontsize": 10},
+        wedgeprops={"linewidth": 1, "edgecolor": "white"},
     )
-    
-
     ax.axis("equal")
+    plt.tight_layout()
 
-    # Mapa para la tabla (0 → blanco)
     table_colors = {bu: ("#ffffff" if counts.get(bu, 0) == 0 else palette[bu]) for bu in order}
     return fig, table_colors
 
 # ========== UI ==========
 st.markdown(f"## {TITLE}")
-#st.caption(f"Reading from: `{DATA_PATH}` | sheet: `{SHEET_NAME if SHEET_NAME is not None else 'auto'}`")
+# (ocultamos 'Reading from' y hoja detectada)
 
-# Cargar datos con autodetección
 try:
     found_sheet, header_row, df = load_excel_auto(DATA_PATH, SHEET_NAME)
-    st.caption(f"Detected sheet: `{found_sheet}` | header row: {header_row}")
 except PermissionError:
     st.error("Permission denied. Cierra el Excel/OneDrive y recarga.")
     st.stop()
@@ -263,11 +261,7 @@ def highlight_row(row):
     bg = color_map.get(row["Business Unit"], "#ffffff")  # 0 → blanco
     return [f"background-color: {bg}; color: black" for _ in row]
 
-#styled = summary_df.style.apply(highlight_row, axis=1)
 styled = summary_df.style.apply(highlight_row, axis=1).format({"Share %": "{:.1f}"})
-
-
 st.table(styled)
 
 st.caption(f"Total users in {selected_loc}: {total_users}")
-

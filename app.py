@@ -153,3 +153,7 @@ try:
 except PermissionError:
     st.error(
         "No se pudo abrir el archivo (Permission denied). ¿Está abierto en Excel/OneDrive? "
+        "Ciérralo y recarga."
+    )
+    st.stop()
+

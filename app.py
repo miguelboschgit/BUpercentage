@@ -152,3 +152,91 @@ def load_excel_auto(path: Path, sheet_name):
         last_first_row = [str(c) for c in raw.iloc[0]] if len(raw) else []
 
     raise ValueError(
+        "No se localizaron columnas requeridas en ninguna hoja.\n"
+        f"Hojas probadas: {xls.sheet_names}\n"
+        f"Ejemplo de fila 0 de una hoja: {last_first_row}\n"
+        f"Revisa que existan columnas equivalentes a: {SYNONYMS}"
+    )
+
+# ========== CLASIFICACIÓN BU ==========
+def categorize_bu(bu: str) -> str:
+    if not isinstance(bu, str):
+        return "Corporate"
+    s = bu.lower()
+    if "taste" in s:
+        return "Taste"
+    if "scent" in s:
+        return "Scent"
+    if "health" in s or "biosc" in s or "h&b" in s or "h+b" in s:
+        return "Health & Biosciences"
+    if ("food" in s and "ingredient" in s) or "food ing" in s or "ingredien" in s:
+        return "Food Ingredients"
+    return "Corporate"
+
+def plot_pie(counts: dict):
+    labels = list(counts.keys())
+    sizes = list(counts.values())
+    fig, ax = plt.subplots()
+    if sum(sizes) == 0:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        ax.axis("off")
+        return fig
+    ax.pie(
+        sizes,
+        labels=labels,
+        autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
+        startangle=90
+    )
+    ax.axis('equal')
+    return fig
+
+# ========== UI ==========
+st.markdown(f"## {TITLE}")
+st.caption(f"Reading from: `{DATA_PATH}` | sheet: `{SHEET_NAME if SHEET_NAME is not None else 'auto'}`")
+
+# Cargar datos con autodetección
+try:
+    found_sheet, header_row, df = load_excel_auto(DATA_PATH, SHEET_NAME)
+    st.caption(f"Detected sheet: `{found_sheet}` | header row: {header_row}")
+except PermissionError:
+    st.error("Permission denied. Cierra el Excel/OneDrive y recarga.")
+    st.stop()
+except Exception as e:
+    st.error(str(e))
+    st.stop()
+
+# ----- Filtro Location -----
+locations = sorted(df["Location"].dropna().unique().tolist())
+selected_loc = st.selectbox("Location", options=locations, index=0 if locations else None)
+if selected_loc is None:
+    st.stop()
+
+df_loc = df[df["Location"] == selected_loc].copy()
+
+# ----- Real Estate ID -----
+unique_ids = sorted(df_loc["Real Estate ID"].dropna().astype(str).unique().tolist())
+reid_text = "—" if not unique_ids else (unique_ids[0] if len(unique_ids) == 1 else ", ".join(unique_ids))
+st.markdown(f"**Real Estate ID:** {reid_text}")
+
+# ----- Cómputo por BU -----
+df_loc["BU Category"] = df_loc["Business Unit"].apply(categorize_bu)
+order = ["Taste", "Scent", "Food Ingredients", "Health & Biosciences", "Corporate"]
+counts = {k: int((df_loc["BU Category"] == k).sum()) for k in order}
+
+total_users = sum(counts.values())
+if total_users == 0:
+    st.info("No hay usuarios en esta Location.")
+    st.stop()
+
+# ----- Pie chart -----
+st.divider()
+st.write("### Breakdown by Business Unit")
+fig = plot_pie(counts)
+st.pyplot(fig, clear_figure=True)
+
+# ----- Resumen tabla -----
+st.write("#### Resumen")
+summary_df = pd.DataFrame({"Business Unit": order, "Users": [counts[k] for k in order]})
+summary_df["Share %"] = (summary_df["Users"] / total_users * 100).round(1)
+st.dataframe(summary_df, use_container_width=True)
+st.caption(f"Total users in {selected_loc}: {total_users}")

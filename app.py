@@ -181,8 +181,15 @@ def plot_pie_and_colors_blue(counts: dict):
         _norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
         norm = lambda v: _norm(v)
 
-    cmap = cm.get_cmap("Blues")
-    slice_colors = [mcolors.to_hex(cmap(norm(v))) for v in sizes]
+    #cmap = cm.get_cmap("Blues")
+    #slice_colors = [mcolors.to_hex(cmap(norm(v))) for v in sizes]
+    # Usar Blues pero solo desde el 0.3 al 0.8 para evitar azules muy oscuros o blancos totales
+    cmap_full = cm.get_cmap("Blues")
+    def cmap_light(v):
+    return cmap_full(0.3 + 0.5 * v)  # 0.3 = azul claro, 0.8 = azul medio
+
+    slice_colors = [mcolors.to_hex(cmap_light(norm(v))) for v in sizes]
+
 
     ax.pie(
         sizes,
@@ -195,7 +202,9 @@ def plot_pie_and_colors_blue(counts: dict):
 
     color_map = {}
     for k, v in counts.items():
-        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap(norm(v)))
+        #color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap(norm(v)))
+        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap_light(norm(v)))
+
     return fig, color_map
 
 # ========== UI ==========

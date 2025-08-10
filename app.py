@@ -286,7 +286,7 @@ if total_users == 0:
 
 # ----- Pie chart + colores (azules fijos y sin categorías 0) -----
 st.divider()
-st.write("### Breakdown by Business Unit")
+#st.write("### Breakdown by Business Unit")
 fig, color_map = plot_pie_fixed_blue(counts, order)
 st.pyplot(fig, clear_figure=True)
 

@@ -13,7 +13,8 @@ st.set_page_config(page_title="BU Breakdown per Site", layout="centered")
 TITLE = "BU Breakdown per Site"
 
 # 👉 Ajusta esta ruta a tu fichero:
-DATA_PATH = Path(r"C:\Users\Miguel\OneDrive - MBD 2005 SL\Documentos\Javier Rua\clone github\BUpercentage\IFF Directory 2025-08-04 01_05 EDT.xlsx")
+#DATA_PATH = Path(r"C:\Users\Miguel\OneDrive - MBD 2005 SL\Documentos\Javier Rua\clone github\BUpercentage\IFF Directory 2025-08-04 01_05 EDT.xlsx")
+DATA_PATH = Path("IFF Directory 2025-08-04 01_05 EDT.xlsx")
 
 # Si dejas SHEET_NAME = None, probará todas las hojas hasta encontrar cabeceras válidas
 SHEET_NAME = None           # None | índice (0,1,...) | nombre ("Sheet1")

@@ -208,7 +208,7 @@ def plot_pie_fixed_blue(counts: dict, order):
 
 # ========== UI ==========
 st.markdown(f"## {TITLE}")
-st.caption(f"Reading from: `{DATA_PATH}` | sheet: `{SHEET_NAME if SHEET_NAME is not None else 'auto'}`")
+#st.caption(f"Reading from: `{DATA_PATH}` | sheet: `{SHEET_NAME if SHEET_NAME is not None else 'auto'}`")
 
 # Cargar datos con autodetección
 try:

@@ -6,6 +6,7 @@ from matplotlib import cm
 from pathlib import Path
 import unicodedata
 import re
+import numpy as np  # <-- para ajustar posiciones de etiquetas
 
 # ========== CONFIG ==========
 st.set_page_config(page_title="BU Breakdown per Site", layout="centered")
@@ -167,10 +168,11 @@ def fixed_blue_palette(order):
 def plot_pie_fixed_blue(counts: dict, order):
     """
     Pie con azules fijos por BU y sin categorías con 0.
-    Coloca labels fuera y % dentro para evitar solapes; oculta porciones < 2%.
+    - Labels fuera y % dentro
+    - Evita solapes desplazando etiquetas vecinas en el mismo lado
+    - Líneas guía hacia cada etiqueta
     """
     palette = fixed_blue_palette(order)
-
     pairs = [(bu, counts.get(bu, 0)) for bu in order if counts.get(bu, 0) > 0]
     fig, ax = plt.subplots()
 
@@ -184,6 +186,7 @@ def plot_pie_fixed_blue(counts: dict, order):
     sizes  = [v  for _,  v in pairs]
     colors = [palette[bu] for bu in labels]
 
+    # % y conteo dentro; oculta porciones < 2%
     def _autopct_factory(vals, cutoff=2.0):
         total = sum(vals)
         def _fmt(pct):
@@ -193,20 +196,54 @@ def plot_pie_fixed_blue(counts: dict, order):
             return f"{pct:.0f}%\n({count})"
         return _fmt
 
-    ax.pie(
+    wedges, texts, autotexts = ax.pie(
         sizes,
-        labels=labels,                         # etiquetas fuera
+        labels=labels,                         # etiquetas FUERA
         colors=colors,
-        autopct=_autopct_factory(sizes, 2.0),  # %/conteo dentro; oculta < 2%
+        autopct=_autopct_factory(sizes, 2.0),  # % DENTRO
         startangle=90,
-        labeldistance=1.1,                    # aleja labels del centro
-        pctdistance=0.66,                      # acerca % al centro
+        labeldistance=1.28,                    # un poco más lejos del centro
+        pctdistance=0.62,                      # % algo más hacia dentro
         textprops={"fontsize": 10},
         wedgeprops={"linewidth": 1, "edgecolor": "white"},
     )
     ax.axis("equal")
+
+    # --------- Desplazar etiquetas vecinas para evitar solape ----------
+    pos = np.array([t.get_position() for t in texts])
+
+    # Lado derecho (x>0) y lado izquierdo (x<0)
+    for side in (True, False):
+        idx = [i for i, (x, _) in enumerate(pos) if (x > 0) == side]
+        if not idx:
+            continue
+        # Orden por Y
+        idx = sorted(idx, key=lambda i: pos[i, 1])
+
+        min_gap = 0.08  # separación vertical mínima entre etiquetas
+        for j in range(1, len(idx)):
+            i_prev, i_cur = idx[j-1], idx[j]
+            y_prev, y_cur = pos[i_prev, 1], pos[i_cur, 1]
+            if y_cur - y_prev < min_gap:
+                pos[i_cur, 1] = y_prev + min_gap  # empuja hacia abajo
+
+    # Aplicar nuevas posiciones y alinear según lado
+    for (x, y), t in zip(pos, texts):
+        t.set_position((x, y))
+        t.set_ha("left" if x > 0 else "right")
+
+    # --------- Líneas guía (leader lines) hacia las etiquetas ----------
+    for w, t in zip(wedges, texts):
+        ang = np.deg2rad((w.theta1 + w.theta2) / 2.0)
+        # punto en el borde de la porción
+        x0, y0 = np.cos(ang) * 1.02, np.sin(ang) * 1.02
+        # punto en la etiqueta
+        xt, yt = t.get_position()
+        ax.plot([x0, xt], [y0, yt], linewidth=0.8, color="#777777")
+
     plt.tight_layout()
 
+    # Colores para la tabla (0 → blanco)
     table_colors = {bu: ("#ffffff" if counts.get(bu, 0) == 0 else palette[bu]) for bu in order}
     return fig, table_colors
 

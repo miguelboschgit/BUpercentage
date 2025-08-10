@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+from matplotlib import colors as mcolors
 from pathlib import Path
 import unicodedata
 import re
@@ -173,22 +174,30 @@ def categorize_bu(bu: str) -> str:
         return "Food Ingredients"
     return "Corporate"
 
-def plot_pie(counts: dict):
+# ========== PLOT (con colores para la tabla) ==========
+def plot_pie_and_colors(counts: dict):
     labels = list(counts.keys())
     sizes = list(counts.values())
     fig, ax = plt.subplots()
     if sum(sizes) == 0:
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
-        return fig
-    ax.pie(
+        return fig, {}
+
+    wedges, texts, autotexts = ax.pie(
         sizes,
         labels=labels,
         autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
         startangle=90
     )
     ax.axis('equal')
-    return fig
+
+    # mapa {label: color_hex} según el color real de cada porción
+    color_map = {}
+    for lab, w in zip(labels, wedges):
+        rgba = w.get_facecolor()
+        color_map[lab] = mcolors.to_hex(rgba, keep_alpha=False)
+    return fig, color_map
 
 # ========== UI ==========
 st.markdown(f"## {TITLE}")
@@ -228,15 +237,26 @@ if total_users == 0:
     st.info("No hay usuarios en esta Location.")
     st.stop()
 
-# ----- Pie chart -----
+# ----- Pie chart + colores -----
 st.divider()
 st.write("### Breakdown by Business Unit")
-fig = plot_pie(counts)
+fig, color_map = plot_pie_and_colors(counts)
 st.pyplot(fig, clear_figure=True)
 
-# ----- Resumen tabla -----
+# ----- Resumen tabla (colores iguales al pie) -----
 st.write("#### Resumen")
 summary_df = pd.DataFrame({"Business Unit": order, "Users": [counts[k] for k in order]})
 summary_df["Share %"] = (summary_df["Users"] / total_users * 100).round(1)
-st.dataframe(summary_df, use_container_width=True)
+
+def highlight_row(row):
+    color = color_map.get(row["Business Unit"], "#ffffff")
+    # Texto en negro para legibilidad; si quisieras calcular contraste, lo añadimos luego
+    return [f"background-color: {color}; color: black" for _ in row]
+
+styled = summary_df.style.apply(highlight_row, axis=1)
+
+# Usa st.table para respetar los estilos (st.dataframe a veces ignora Styler)
+st.table(styled)
+
 st.caption(f"Total users in {selected_loc}: {total_users}")
+

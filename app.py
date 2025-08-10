@@ -193,13 +193,23 @@ def plot_pie_fixed_blue(counts: dict, order):
     sizes  = [v  for _,  v in pairs]
     colors = [palette[bu] for bu in labels]
 
+    #ax.pie(
+     #   sizes,
+     #  labels=labels,
+     #   colors=colors,
+     #   autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
+     #   startangle=90
+    #)
     ax.pie(
         sizes,
         labels=labels,
-        colors=colors,
+        colors=slice_colors,
         autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
-        startangle=90
+        startangle=90,
+        labeldistance=1.1,   # separa etiquetas del centro
+        pctdistance=0.75     # coloca los porcentajes un poco más hacia dentro
     )
+
     ax.axis("equal")
 
     # Mapa para la tabla (0 → blanco)

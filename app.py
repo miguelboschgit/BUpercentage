@@ -199,7 +199,7 @@ def plot_pie_fixed_blue(counts: dict, order):
         colors=colors,
         autopct=_autopct_factory(sizes, 2.0),  # %/conteo dentro; oculta < 2%
         startangle=90,
-        labeldistance=1.25,                    # aleja labels del centro
+        labeldistance=1.1,                    # aleja labels del centro
         pctdistance=0.66,                      # acerca % al centro
         textprops={"fontsize": 10},
         wedgeprops={"linewidth": 1, "edgecolor": "white"},

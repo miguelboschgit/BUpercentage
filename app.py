@@ -110,7 +110,7 @@ def load_excel_auto(path: Path, sheet_name):
         hr, df_ok = find_header_row(raw)
         return hr, df_ok, raw
 
-    if sheet_name es not None:
+    if sheet_name is not None:
         hr, df_ok, raw = load_from_sheet(sheet_name)
         if df_ok is None:
             first_row = [str(c) for c in raw.iloc[0]] if len(raw) else []

@@ -152,58 +152,59 @@ def categorize_bu(bu: str) -> str:
         return "Food Ingredients"
     return "Corporate"
 
-# ========== PIE + COLOR MAP (AZULES CLAROS) ==========
-def plot_pie_and_colors_blue(counts: dict):
+# ====== PALETA FIJA DE AZULES (SUAVE) + PIE ======
+def fixed_blue_palette(order):
     """
-    Pie chart en escala 'Blues' clara.
-    - Oculta categorías con 0 en el pie.
-    - Devuelve (fig, color_map) donde 0 -> blanco en la tabla.
-    - Mayor 'Users' => azul más oscuro (pero no muy oscuro).
+    Devuelve un dict {BU: color_hex} con azules fijos y suaves.
+    Usamos un subrango del colormap 'Blues' para que todos los tonos sean claros/medios.
+    El primer BU de 'order' recibe el tono más intenso (pero suave).
     """
-    labels_all = list(counts.keys())
-    sizes_all  = list(counts.values())
-    pairs = [(l, s) for l, s in zip(labels_all, sizes_all) if s > 0]
+    cmap = cm.get_cmap("Blues")
+    n = len(order)
+    if n <= 1:
+        levels = [0.60]  # azul medio-suave
+    else:
+        # rango suave: 0.40 (claro) → 0.68 (medio). Bien separados.
+        start, end = 0.40, 0.68
+        step = (end - start) / (n - 1)
+        # el primero de 'order' usa el más intenso dentro del rango (pero suave)
+        levels = [end - i * step for i in range(n)]
+    return {bu: mcolors.to_hex(cmap(lv)) for bu, lv in zip(order, levels)}
 
+def plot_pie_fixed_blue(counts: dict, order):
+    """
+    Pie con azules fijos por BU (suaves) y SIN categorías con 0.
+    Devuelve (fig, color_map) para colorear la tabla.
+    """
+    palette = fixed_blue_palette(order)
+
+    # Solo >0 para el pie
+    pairs = [(bu, counts.get(bu, 0)) for bu in order if counts.get(bu, 0) > 0]
     fig, ax = plt.subplots()
+
     if not pairs:
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
-        return fig, {k: "#ffffff" for k in labels_all}
+        # tabla: 0 → blanco
+        table_colors = {bu: "#ffffff" if counts.get(bu, 0) == 0 else palette[bu] for bu in order}
+        return fig, table_colors
 
-    labels = [p[0] for p in pairs]
-    sizes  = [p[1] for p in pairs]
-
-    vmin, vmax = min(sizes), max(sizes)
-    if vmin == vmax:
-        # todos iguales → tono medio-claro constante
-        def norm(_): return 0.5
-    else:
-        _norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-        def norm(v): return _norm(v)
-
-    # sub-rango claro de Blues para evitar tonos muy oscuros
-    cmap_full = cm.get_cmap("Blues")
-    def cmap_light_unit(u: float):
-        # u en [0,1] → mapea a [0.25, 0.75] (claro → medio)
-        x = 0.25 + 0.50 * max(0.0, min(1.0, u))
-        return cmap_full(x)
-
-    slice_colors = [mcolors.to_hex(cmap_light_unit(norm(v))) for v in sizes]
+    labels = [bu for bu, v in pairs]
+    sizes  = [v  for _,  v in pairs]
+    colors = [palette[bu] for bu in labels]
 
     ax.pie(
         sizes,
-        labels=labels,             # solo >0
-        colors=slice_colors,
+        labels=labels,
+        colors=colors,
         autopct=lambda p: f"{p:.0f}%\n({int(round(p/100*sum(sizes)))})" if p > 0 else "",
         startangle=90
     )
     ax.axis("equal")
 
-    # mapa de colores para la tabla (0 → blanco)
-    color_map = {}
-    for k, v in counts.items():
-        color_map[k] = "#ffffff" if v == 0 else mcolors.to_hex(cmap_light_unit(norm(v)))
-    return fig, color_map
+    # Mapa para la tabla (0 → blanco)
+    table_colors = {bu: ("#ffffff" if counts.get(bu, 0) == 0 else palette[bu]) for bu in order}
+    return fig, table_colors
 
 # ========== UI ==========
 st.markdown(f"## {TITLE}")
@@ -243,10 +244,10 @@ if total_users == 0:
     st.info("No hay usuarios en esta Location.")
     st.stop()
 
-# ----- Pie chart + colores (azules claros y sin categorías 0) -----
+# ----- Pie chart + colores (azules fijos y sin categorías 0) -----
 st.divider()
 st.write("### Breakdown by Business Unit")
-fig, color_map = plot_pie_and_colors_blue(counts)
+fig, color_map = plot_pie_fixed_blue(counts, order)
 st.pyplot(fig, clear_figure=True)
 
 # ----- Resumen (tabla con el mismo esquema de color) -----
@@ -262,3 +263,4 @@ styled = summary_df.style.apply(highlight_row, axis=1)
 st.table(styled)
 
 st.caption(f"Total users in {selected_loc}: {total_users}")
+
